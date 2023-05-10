@@ -1,0 +1,146 @@
+---
+title: 'Next.jsでnext-sitemapを使用せず、sitemapを動的に作成する方法'
+date: '2023.5.4'
+cover_image: '/assets/img/COMOCOMO.jpg'
+category: 'Next.js'
+author: '山本 真奈'
+author_image: '/assets/img/Mana.jpg'
+excerpt: 'Next.jsではnext-sitemapを使用してサイトマップを作成する方法が他のブログでも見かけるのですが、next-sitemapを使用せずに動的にsitemapを簡単に作成する方法があるのでご紹介します'
+---
+
+SEO（検索エンジン最適化）対策の一つにサイトマップの作成があります。サイトマップは、Web サイトを検索エンジンに正しくインデックスするための重要なツールの 1 つです。Next.js では next-sitemap を使用してサイトマップを作成する方法が他のブログでも見かけるのですが、next-sitemap を使用せずに動的に sitemap を簡単に作成する方法があります。この記事では、その方法について説明します。
+
+## Next.js の SEO 対策
+
+Next.js は React をベースにした JavaScript のフレームワークで、SEO 対策に焦点を当てて開発されており、様々な機能が提供されています。
+
+- サイトのメタデータ、タイトル、ディスクリプションの簡単設定（next/head）
+- クローラーがサイトをスムーズにクロールできるようサイトの構造を最適化する
+- サイトの読み込み速度を最適化し、ユーザーエクスペリエンスを向上させる
+
+## 動的に sitemap を作成する方法
+
+Next.js [公式](https://nextjs.org/learn/seo/crawling-and-indexing/xml-sitemaps)で sitemap/sitemap.xml.js を pages 以下に追加することで、簡単に動的なサイトマップを作成する方法が書かれています。
+
+> サイトマップを使用し、新しいコンテンツがウェブサイトに追加されるたびに、サイトマップをダイナミックに更新することを強くお勧めします。
+> 静的なサイトマップも有効ですが、Google が常に発見する目的には役立たないため、あまり役に立たないかもしれません。
+> 動的に sitemap を作成するには、サイトのページと URL を配列に格納し、動的に XML ファイルを生成する必要があります。
+> この方法では、ページが更新されたときに、sitemap が更新され、検索エンジンが迅速に変更を反映することができます。
+
+ウェブサイトにブログなど、動的に URL が変化する場合には、自動的に XML に登録してもらうことが、SEO 対策にとって有用です。
+下記に公式とは少しコードを変えたものを掲載します。
+
+変えたポイントは、以下の通りです。
+
+１）API エンドポイントからブログ記事データを取得
+２）更新日を追加（SEO 対策として更新日情報は重要とのことでした）
+
+```js
+// /pages/sitemap.xml.js
+
+import { getPosts } from './api/posts';
+const DOMAIN_NAME = 'https://example.com';
+
+function generateSiteMap(posts) {
+	return `<?xml version="1.0" encoding="UTF-8"?>
+   <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
+     <url>
+       <loc>${DOMAIN_NAME}</loc>
+     </url>
+	 <url>
+       <loc>${DOMAIN_NAME}/company</loc>
+     </url>
+	 <url>
+       <loc>${DOMAIN_NAME}/blog</loc>
+     </url>
+	 <url>
+       <loc>${DOMAIN_NAME}/services</loc>
+     </url>
+     <url>
+       <loc>${DOMAIN_NAME}/contact-us</loc>
+     </url>
+     ${posts
+				.map(({ slug, frontmatter }) => {
+					return `
+       <url>
+           <loc>${`${DOMAIN_NAME}/blog/${slug}`}</loc>
+		   <lastmod>${new Date(frontmatter.date).toISOString()}</lastmod>
+
+       </url>
+     `;
+				})
+				.join('')}
+   </urlset>
+ `;
+}
+
+export async function getServerSideProps({ res }) {
+	const posts = getPosts();
+	const sitemap = generateSiteMap(posts);
+	res.setHeader('Content-Type', 'text/xml');
+
+	res.write(sitemap);
+	res.end();
+
+	return {
+		props: {},
+	};
+}
+const SiteMap = ({ sitemap }) => sitemap;
+
+export default SiteMap;
+```
+
+API エンドポイントはこんな感じです。
+
+```js
+// /pages/api/post.js
+
+import path from 'path';
+import matter from 'gray-matter';
+import fs from 'fs';
+
+const files = fs.readdirSync(path.join(process.cwd(), 'posts'));
+
+export function getPosts() {
+	const posts = files.map(filename => {
+		const slug = filename.replace(/.mdx$/, '');
+
+		const markdownWithMeta = fs.readFileSync(
+			path.join(process.cwd(), 'posts', filename),
+			'utf-8'
+		);
+
+		const { data: frontmatter } = matter(markdownWithMeta);
+
+		return {
+			slug,
+			frontmatter,
+		};
+	});
+
+	return posts;
+}
+```
+
+これで`https://example.com/sitemap.xml`にアクセスしてサイトマップが表示されれば作成成功です！
+
+## Google Search Console に追加
+
+Google Search Console にサイトマップを登録する手順は以下の通りです。
+
+1. Google Search Console にログインして、対象のサイトを選択します。
+2. サイドメニューの「サイトマップ」をクリックします。
+3. 「サイトマップを追加/テスト」ボタンをクリックします。
+4. サイトマップの URL を入力します。（`https://example.com/sitemap.xml`のような形式）
+
+   ![Google Search Console](/assets/posts/console.webp 'Google Search Console')
+
+5. 「送信」ボタンをクリックします。
+
+サイトマップが正しく登録されると、Google がサイトを効果的にクロールできるようになります。
+
+## 結論
+
+サイトマップは、検索エンジンが Web サイトを正しくインデックスするために重要な役割を果たします。Next.js で next-sitemap を使用せずに、sitemap を簡単かつ動的に作成する方法を紹介しました。
